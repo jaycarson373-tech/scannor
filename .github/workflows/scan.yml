@@ -1,0 +1,44 @@
+name: scan
+
+# Every 10 minutes: scan, ask Claude for beta plays (every SCANNOR_CLAUDE_EVERY_MIN), ping new open ideas.
+# GitHub may start scheduled runs a few minutes late under load.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # State (narrative weights + ideas already pinged) carries between runs through the cache.
+      - uses: actions/cache/restore@v4
+        with:
+          path: .state
+          key: scannor-state-${{ github.run_id }}
+          restore-keys: scannor-state-
+      - run: npx tsx scripts/run.ts --notify
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SCANNOR_DASHBOARD_URL: ${{ vars.SCANNOR_DASHBOARD_URL }}
+          SCANNOR_ALERT_SCORE: ${{ vars.SCANNOR_ALERT_SCORE }}
+          SCANNOR_CLAUDE_EVERY_MIN: ${{ vars.SCANNOR_CLAUDE_EVERY_MIN }}
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .state
+          key: scannor-state-${{ github.run_id }}
